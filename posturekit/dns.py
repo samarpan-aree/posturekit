@@ -128,3 +128,99 @@ def check_spf(txt_records: Sequence[str]) -> Finding:
         detail=f"Single SPF record ending in -all with {lookups} DNS-querying mechanism(s).",
         evidence=record,
     )
+
+
+def parse_dmarc(record: str) -> dict[str, str]:
+    """Turn a DMARC record into a tag dictionary."""
+
+    tags: dict[str, str] = {}
+    for match in _DMARC_TAG_RE.finditer(record):
+        tags[match.group(1).lower()] = match.group(2).strip()
+    return tags
+
+
+def check_dmarc(records: Sequence[str]) -> Finding:
+    """p=none is monitoring, not enforcement."""
+
+    dmarc = [r.strip() for r in records if r.strip().lower().startswith("v=dmarc1")]
+
+    if not dmarc:
+        return _dmarc_finding(
+            detail="No DMARC record at _dmarc, so a failing SPF or DKIM result changes nothing for the receiver."
+        )
+
+    tags = parse_dmarc(dmarc[0])
+    policy = tags.get("p", "none").lower()
+
+    if policy == "none":
+        return _dmarc_finding(
+            severity=Severity.MEDIUM,
+            detail="p=none collects reports but instructs receivers to deliver spoofed mail anyway.",
+            evidence=dmarc[0],
+        )
+
+    if policy not in ("quarantine", "reject"):
+        return _dmarc_finding(
+            severity=Severity.MEDIUM,
+            detail=f"Unrecognised DMARC policy '{policy}'.",
+            evidence=dmarc[0],
+        )
+
+    detail = f"p={policy}"
+    if policy == "reject":
+        detail += ", the strongest available enforcement"
+    if "rua" not in tags:
+        detail += "; no rua address, so you will not see what is being blocked"
+
+    return _dmarc_finding(
+        passed=True,
+        detail=detail + ".",
+        evidence=dmarc[0],
+    )
+
+
+def check_caa(records: Sequence[str]) -> Finding:
+    """CAA narrows which CAs may issue for the domain."""
+
+    values = [r.strip() for r in records if r.strip()]
+    passed = bool(values)
+    return Finding(
+        check_id="caa",
+        category=Category.DNS,
+        severity=Severity.LOW,
+        weight=4,
+        title="Certificate Authority Authorization",
+        passed=passed,
+        detail=(
+            "CAA constrains issuance to: " + "; ".join(values) + "."
+            if passed
+            else "No CAA record, so any public CA may issue a certificate for this domain."
+        ),
+        remediation="Publish a CAA record naming only the CAs you actually use.",
+        evidence="; ".join(values),
+    )
+
+
+def check_dns(
+    txt_records: Sequence[str],
+    dmarc_records: Sequence[str],
+    caa_records: Sequence[str],
+) -> list[Finding]:
+    """Run every DNS-level check."""
+
+    return [
+        check_spf(txt_records),
+        check_dmarc(dmarc_records),
+        check_caa(caa_records),
+    ]
+
+
+__all__ = [
+    "MAX_SPF_LOOKUPS",
+    "check_caa",
+    "check_dmarc",
+    "check_dns",
+    "check_spf",
+    "count_spf_lookups",
+    "parse_dmarc",
+]
