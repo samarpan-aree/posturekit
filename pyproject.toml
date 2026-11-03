@@ -7,7 +7,7 @@ name = "posturekit"
 version = "1.0.0"
 description = "External security posture scanner: HTTP security headers, TLS, cookies and DNS email authentication in one pass, with SARIF output for CI."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Samarpan Aree" }]
 keywords = ["security", "headers", "tls", "dns", "dmarc", "devsecops", "cli", "sarif"]
